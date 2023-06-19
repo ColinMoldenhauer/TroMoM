@@ -20,3 +20,22 @@ def aoi2poly(AOI):
     polygon = ','.join([str(c) for xy in zip(*poly.exterior.coords.xy) for c in xy])
 
     return polygon
+
+
+def corners2xy(points):
+    w, n, e, s = [c for corner in points for c in corner]
+    x = [w, e, e, w, w]
+    y = [n, n, s, s, n]
+    return x, y
+
+
+def EASE2EPSG(epsg):
+    pass
+
+
+def smap2EPSG(data, lon, lat, epsg):
+    pass
+
+
+def crop2aoi(data, AOI):
+    pass
