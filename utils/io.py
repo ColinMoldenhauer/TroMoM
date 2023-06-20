@@ -3,12 +3,12 @@ import os
 import re
 import warnings
 
+import matplotlib.pyplot as plt
 import h5py
 import netCDF4
 import numpy as np
-import rasterio
-
-from rasterio.plot import show
+import rioxarray
+from xarray import DataArray
 
 
 def lonlat_from_netCDF(fn):
@@ -25,21 +25,35 @@ def lonlat_from_double(lon_file, lat_file):
     return lons, lats
 
 
-def read_SMAP(filepath, group_id="Soil_Moisture_Retrieval_Data_AM", variable_id='soil_moisture', verbose=True):
+def print_raster(raster, indent=0):
+    indent = "\t"*indent
+    print(f"{indent}type:", type(raster))
+    print(
+        f"{indent}shape: {raster.rio.shape}\n"
+        f"{indent}resolution: {raster.rio.resolution()}\n"
+        f"{indent}bounds: {raster.rio.bounds()}\n"
+        f"{indent}CRS: {raster.rio.crs}\n"
+        f"{indent}nodata: {raster.rio.nodata}\n"
+    )
+
+
+def read_SMAP(filepath, group_id="Soil_Moisture_Retrieval_Data_AM", variable_id='soil_moisture',
+              verbose=1, debug=False):
     '''
     This function extracts and soil moisture from SPL3SMP_E HDF5 file.
     Might work for other Level 3 SMAP products (with similar data structure).
-
-    Parameters
-    ----------
-    filepath : str
-        File path of a SMAP L3 HDF5 file
-    Returns
-    -------
-    soil_moisture_am: numpy.array
     '''
+    # TODO: nodata (-9999)
+
+    def _print_structure(name, obj):
+        level = name.count("/")
+        indent = "\t"*level
+        print(f"{indent}{obj}")
+
+    suffix = "_pm" if group_id.endswith("_PM") else ""
+        
     with h5py.File(filepath, 'r') as f:
-        if verbose:
+        if verbose > 1:
             print(f)
             print("available GROUPs")
             for i, key in enumerate(f.keys()):
@@ -48,14 +62,43 @@ def read_SMAP(filepath, group_id="Soil_Moisture_Retrieval_Data_AM", variable_id=
             for j, var in enumerate(list(f[group_id].keys())):
                 print(f"\t\t{j}:\t{var}")
 
-        soil_moisture_am = f[group_id][variable_id][:, :]
+            f.visititems(_print_structure)
 
-        flag_id = 'retrieval_qual_flag' if 'retrieval_qual_flag' in f[group_id] else "retrieval_qual_flag_pm"
-        flag_am = f[group_id][flag_id][:, :]
 
-        soil_moisture_am[soil_moisture_am == -9999.0] = np.nan
+        data = f[group_id][variable_id][:, :]
+        flag = f[group_id]['retrieval_qual_flag' + suffix][:, :]
+
+        def _find_full_entry(data, axis):
+            uniq = np.apply_along_axis(np.unique, axis=axis, arr=data)
+            if axis == 1: uniq = uniq.T
+            return uniq[1]
+
+        lon_all = f[group_id]['longitude' + suffix][:, :]
+        lat_all = f[group_id]['latitude' + suffix][:, :]
+        lon = _find_full_entry(lon_all, axis=0)
+        lat = _find_full_entry(lat_all, axis=1)
+
+        if debug:
+            fig, (ax_data, ax_lon, ax_lat) = plt.subplots(1, 3)
+            ax_data.imshow(data)
+            ax_data.set_title("data")
+            ax_lon.imshow(lon_all)
+            ax_lon.set_title("lon")
+            ax_lat.imshow(lat_all)
+            ax_lat.set_title("lat")
+            plt.show()
+
+            fig, (ax_lon, ax_lat) = plt.subplots(1, 2)
+            ax_lon.plot(lon)
+            ax_lon.set_title("lon")
+            ax_lat.plot(lat)
+            ax_lat.set_title("lat")
+            plt.show()
+
+
+        data[data == -9999.0] = np.nan
         # TODO: what does following line do?
-        soil_moisture_am[(flag_am >> 0) & 1 == 1] = np.nan
+        data[(flag >> 0) & 1 == 1] = np.nan
 
         filename = os.path.basename(filepath)
 
@@ -67,76 +110,76 @@ def read_SMAP(filepath, group_id="Soil_Moisture_Retrieval_Data_AM", variable_id=
 
         date = dt.datetime(yyyy, mm, dd)
 
-    return soil_moisture_am, date
+    # from: https://docs.xarray.dev/en/stable/generated/xarray.DataArray.html
+    da = DataArray(
+        data=data.T,
+        dims=["x", "y"],
+        coords=dict(
+            x=lon,
+            y=lat),
+        attrs=dict(
+            description="Soil Moisture",    # TODO: extract from h5?
+            units="water fraction",         # TODO: confirm
+        )
+    )
+    da.rio.set_crs("epsg:4326", inplace=True)
+
+    if verbose > 0:
+        print("\nSMAP file:", filepath)
+        print_raster(da, indent=1)
+
+    return data, date
 
 
-def read_POP(filename, verbose=True):
-    # no-data, further info: https://land.copernicus.eu/global/products/LST
+def read_POP(filename, verbose=1):
+    # TODO: nodata
+    xds = rioxarray.open_rasterio(filename)     # <class 'xarray.core.dataarray.DataArray'>
+    if verbose == 1:
+        print("\nPOP file:", filename)
+        print_raster(xds, indent=1)
+    else:
+        print(xds)
+
+    return xds
+
+
+def read_LST(filename, verbose=1):
+    # further info: https://land.copernicus.eu/global/products/LST
     # TODO: no-data: -8000
-    with rasterio.open(filename) as ds:
-        if verbose:
-            print("dims:", (ds.height, ds.width))
-            print("crs:", ds.crs)
-            print("bounds:", ds.bounds)
-        data = ds.read(1)
+    # note: EPSG:4326 not recognized by riox, need to set it manually (find out difference to NDVI?)
 
-        cols, rows = np.meshgrid(np.arange(ds.width), np.arange(ds.height))
-        lon, lat = rasterio.transform.xy(ds.transform, rows, cols)
+    ds = rioxarray.open_rasterio(filename)     # <class 'xarray.core.dataset.Dataset'>
+    if ds.rio.crs != "EPSG:4326":
+        warnings.warn("LST CRS not EPSG:4326, setting CRS manually")
+        ds.rio.write_crs(4326, inplace=True)
+    xds = ds["LST"]
 
-    if verbose: print("data:", data.shape, type(data), data.dtype)
-    if (data < 0).sum() > 1: warnings.warn("Negative values in POP data, please investigate!")
-    # TODO: transform to masked array (no-data value -200)
-    return data, np.array(lon), np.array(lat)
-
-
-def read_LST(filename, verbose=True):
-    with rasterio.open(filename) as ds:
+    if verbose: print("\nLST file:", filename)
+    if verbose == 1:
+        print_raster(xds, indent=1)
+    elif verbose == 2:
+        print(xds)
+    elif verbose == 3:
         print(ds)
-        print(dir(ds))
-        ds.
+
+    return xds
 
 
-def read_LST_nCDF(filename, verbose=True):
-    ds = netCDF4.Dataset(filename, "r")
-    lst_masked = ds["LST"][:]
-    if verbose:
-        print(ds)
-        print("time:", ds["time"][:])
-        print("LST:", ds["LST"][:].shape, type(ds["LST"][:]))
-        print("lat:", ds["lat"][:].shape, type(ds["lat"][:]))
-        print("lon:", ds["lon"][:].shape, type(ds["lon"][:]))
-
-    if verbose: print(f"LST masked:", lst_masked.mask.sum(), lst_masked.mask.sum()/lst_masked.size)
-    return lst_masked
-
-
-def read_NDVI(filename, verbose=True):
-    # no-data, further info: https://land.copernicus.eu/global/products/NDVI
+def read_NDVI(filename, verbose=1):
+    # further info: https://land.copernicus.eu/global/products/NDVI
     # TODO: no-data: 254: water, 255: no-data
+    # note: EPSG:4326 recognized correctly
 
-    ds = netCDF4.Dataset(filename, "r")
-    ndvi_masked = ds["NDVI"][:]
+    ds = rioxarray.open_rasterio(filename)
+    xds = ds["NDVI"]
+    assert xds.rio.crs == "EPSG:4326", "CRS not EPSG:4326, fix this!"
+
     if verbose:
+        print("\nNDVI file:", filename)
+    if verbose == 1:
+        print_raster(xds, indent=1)
+    elif verbose == 2:
+        print(xds)
+    else:
         print(ds)
-        print("time:", ds["time"][:])
-        print("NDVI:", ds["NDVI"][:].shape, type(ds["LST"][:]))
-        print("lat:", ds["lat"][:].shape, type(ds["lat"][:]))
-        print("lon:", ds["lon"][:].shape, type(ds["lon"][:]))
-
-    if verbose: print(f"NDVI masked:", ndvi_masked.mask.sum(), ndvi_masked.mask.sum() / ndvi_masked.size)
-    return ndvi_masked
-
-
-def read_NDVI_tiff(filename, verbose=True):
-    with rasterio.open(filename) as ds:
-        if verbose:
-            print("bands:", ds.count)
-            print("dims:", (ds.height, ds.width))
-            print("crs:", ds.crs)
-            print("bounds:", ds.bounds)
-        data = ds.read(1)
-
-    if verbose: print("data:", data.shape, type(data), data.dtype)
-    if (data < 0).sum() > 1: warnings.warn("Negative values in NDVI data, please investigate!")
-    # TODO: transform to masked array
-    return data
+    return xds
