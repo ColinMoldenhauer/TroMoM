@@ -11,7 +11,11 @@ import rioxarray
 from xarray import DataArray
 import xarray
 
-# TODO: fix attributes for plotting https://docs.xarray.dev/en/stable/user-guide/plotting.html
+# TODO: determine necessary data types (save space by using int/float16)
+# TODO: check scaling behavior of nodata values: Nodata kept or transformed? Nodata attrs kept?
+""" Notes
+- "you can write the CF attributes" https://corteva.github.io/rioxarray/stable/getting_started/crs_management.html
+"""
 
 def lonlat_from_netCDF(fn):
     ds = netCDF4.Dataset(fn, "r")
@@ -46,7 +50,7 @@ def print_raster(raster, all=False, indent=0):
         for attr in dir(raster):
             if callable(getattr(raster, attr)): continue
             try:
-                print(f"{attr}  | ", getattr(raster, attr))
+                print(f"{attr: <10}  | ", getattr(raster, attr))
             except:
                 print("error with attr:", attr)
     else:
@@ -112,7 +116,7 @@ def read_SMAP(filepath, group_id="Soil_Moisture_Retrieval_Data_AM", variable_id=
             ax_lat.set_title("lat")
             plt.show()
 
-
+        # TODO: below line necessary for xarray?
         data[data == -9999.0] = np.nan
         # TODO: what does following line do?
         data[(flag >> 0) & 1 == 1] = np.nan
@@ -130,14 +134,15 @@ def read_SMAP(filepath, group_id="Soil_Moisture_Retrieval_Data_AM", variable_id=
 
     # from: https://docs.xarray.dev/en/stable/generated/xarray.DataArray.html
     da = DataArray(
+        name="Soil Moisture",
         data=data,
         dims=["y", "x"],
         coords=dict(
             x=lon,
             y=lat),
         attrs=dict(
-            description="Soil Moisture",    # TODO: extract from h5?
-            units="water fraction",         # TODO: confirm
+            description="Soil Moisture",            # TODO: extract from h5?
+            units="water fraction cm³/cm³",         # TODO: confirm
         )
     )
     da.rio.set_crs("epsg:4326", inplace=True)
@@ -163,6 +168,7 @@ def read_POP(filename, verbose=2):
     # TODO: units
     xds = rioxarray.open_rasterio(filename, masked=True, decode_cf=True)     # <class 'xarray.core.dataarray.DataArray'>
     xds.rio.set_nodata(-200, inplace=True)
+    xds.attrs["units"] = "#inhabitants"
     if verbose == 1:
         print("\nPOP file:", filename)
         print_raster(xds, indent=1)
@@ -200,7 +206,7 @@ def read_LST(filename, raw=False, verbose=1):
     - open_rasterio(masked=True) changes _FillValue to from -8000 to 3.402823466e+38
 
     :param filename: (str) Filename of input file (.nc NetCDF file)
-    :param raw: (bool) Default False | Whether to transform data into physical values right away or only read raw data
+    :param raw: (bool) Whether to transform data into physical values right away or only read raw data
     :param verbose: (int) Toggles verbosity level
     :return: (xarray.DataArray) Georeferenced data array object
     """
@@ -216,9 +222,10 @@ def read_LST(filename, raw=False, verbose=1):
         xds = xds_raw
     if not raw:
         xds = xds_raw/100  # °C
+        xds.attrs = xds_raw.attrs
         xds.rio.write_crs(input_crs=xds_raw.rio.crs, grid_mapping_name=xds_raw.rio.grid_mapping, inplace=True)
         xds.attrs["units"] = "°C"
-        xds.attrs["valid_range"] = list(np.array([-7000.0, 8000.])/100)
+        xds.attrs["valid_range"] = [-70, 80]
 
 
     if verbose: print("\nLST file:", filename)
@@ -232,14 +239,34 @@ def read_LST(filename, raw=False, verbose=1):
     return xds
 
 
-def read_NDVI(filename, verbose=1):
-    # further info: https://land.copernicus.eu/global/products/NDVI
-    # TODO: no-data: 254: water, 255: no-data multiple values? probably set all to 255
-    # TODO: units
-    # note: EPSG:4326 recognized correctly
+def read_NDVI(filename, raw=False, chunks=4000, verbose=1):
+    """
+    Reads NDVI data, obtained from https://land.copernicus.eu/global/products/NDVI.
+    Makes use of dask chunking mechanisms and is hence suitable for very large files.
+    The digital value needs to be transformed to the physical range as follows: PV = Scaling * DN + Offset.
 
-    ds = rioxarray.open_rasterio(filename)
-    xds = ds["NDVI"]
+    Notes:
+    - EPSG:4326 recognized correctly
+
+    :param filename: (str) Filename of input file (.nc NetCDF file)
+    :param raw: (bool) Whether to transform data into physical values right away or only read raw data
+    :param verbose: (int) Toggles verbosity level
+    :return: (xarray.DataArray) Georeferenced data array object
+    """
+    # TODO: no-data: 254: water, 255: no-data multiple values? probably set all to 255
+    # TODO: use ds.NDVI_unc, ds.NOBS, ds.QFLAG
+    # TODO: understand valid NDVI value range, why not [-1, 1]
+
+    ds = rioxarray.open_rasterio(filename, masked=True, chunks={'x': chunks, 'y': chunks})
+    xds_raw = ds["NDVI"]
+    if raw:
+        xds = xds_raw
+    else:
+        xds = xds_raw/250 - 0.08
+        xds.attrs = xds_raw.attrs
+        xds.rio.write_crs(input_crs=xds_raw.rio.crs, grid_mapping_name=xds_raw.rio.grid_mapping, inplace=True)
+        xds.attrs["units"] = "-"
+        xds.attrs["valid_range"] = [-0.08, 0.92]
     assert xds.rio.crs == "EPSG:4326", "CRS not EPSG:4326, fix this!"
 
     if verbose:

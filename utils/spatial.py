@@ -6,7 +6,7 @@ def resample_data(xds, factor, method=Resampling.bilinear, verbose=True):
     # TODO: POP: axis labels change to longitude, _FillValue is set, dimensions stay as x/y...
     # TODO: LST: axis labels change to longitude, dimensions stay as x/y...
 
-    # TODO!!: resampling shouldnt use no-data values
+    # TODO!!: resampling shouldnt use no-data values | done, but isolated values are lost
 
     new_width = round(xds.rio.width * factor)
     new_height = round(xds.rio.height * factor)
@@ -27,17 +27,19 @@ def resample_data(xds, factor, method=Resampling.bilinear, verbose=True):
 
 def crop2aoi(xds, AOI, buffer=None, verbose=True):
     """
+    Crops data to a user-specified area of interest (AOI).
 
     Notes:
     - AOI may be larger than data
-    :param xds:
-    :param AOI:
-    :param buffer:
-    :param verbose:
-    :return:
+
+    :param xds: (xarray.DataArray) The data to be cropped.
+    :param AOI: (geopandas.GeoDataFrame) GeoDataFrame specifying the area of interest. Frames with multiple geometries
+    are not yet supported, the first geometry will always be chosen for the crop.
+    :param buffer: (float | int) Before cropping, the AOI will first be extended (buffer > 0) or shrunk (buffer < 0).
+    :param verbose: (bool) Toggles verbosity level.
+    :return: (xarray.DataArray) The cropped data.
     """
     # TODO: adapt to multi-area AOIs -> get envelope -> then bounds (probably using GeoSeries.unary_union())
-    # TODO: what happens if AOI larger than cropped area?
     if buffer is not None: AOI = AOI.buffer(buffer)
     minx, miny, maxx, maxy = AOI.bounds.values[0]
     if verbose:

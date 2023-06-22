@@ -58,6 +58,7 @@ def download_smap_single_date(shortname, date, data_dir="data", version=None, ve
         url_path = smap_path(shortname, version, year, month, day)
         if verbose: print(f"Downloading SMAP data for: {year}-{month}-{day} ({url_path})")
 
+        downloaded_files = []
         file_names = get_files(session, url_path)
         for i, file_name_ in enumerate(file_names):
             if verbose: print(f"\tfile: {file_name_} [{i+1}/{len(file_names)}]")
@@ -70,9 +71,15 @@ def download_smap_single_date(shortname, date, data_dir="data", version=None, ve
                 f.write(response.content)
 
             if verbose: print('\t*** SM data downloaded to: '+ filepath +' *** ')
+            downloaded_files.append(filepath)
+        return downloaded_files
 
 
 def download_smap(shortname, AOI, dates):
+    # TODO optional: replace with re below?
     dates = [str(d_)[:10] for d_ in pd.date_range(*dates)]
+    downloaded = []
     for date_ in dates:
-        download_smap_single_date(shortname, date_)
+        downl_ = download_smap_single_date(shortname, date_)
+        downloaded.extend(downl_)
+    return downloaded

@@ -80,7 +80,45 @@ def plot_data_dual(data, lon, lat, colorbar=False):
     return m_world, m_aoi
 
 
-def plot_data_sources(lst, ndvi, pop, smap, AOI, title, **kwargs):
+def plot_data_sources(*data, AOI, title, **kwargs):
+    # TODO: include meaningful title (AOI?, time?)
+    n_data = len(data)
+    if n_data == 1:
+        fig = plt.figure()
+        axs = [plt.gca()]
+    elif n_data < 4:
+        fig, axs = plt.subplots(1, n_data, **kwargs)
+        axs = axs.flatten()
+    else:
+        fig, axs = plt.subplots(2, 2, **kwargs)
+        axs = axs.flatten()
+    fig.suptitle(title, weight="bold")
+    plt.subplots_adjust(wspace=0.3, hspace=0.4)
+
+    world = gpd.read_file(gpd.datasets.get_path('naturalearth_lowres')).clip(AOI)
+    for ax, d_ in zip(axs, data):
+        if d_.name == "NDVI":
+            cmap = "Greens"
+        else:
+            cmap = None
+
+        ax.axis('equal')
+        d_.plot(ax=ax, cmap=cmap)
+        world.plot(ax=ax, facecolor='none', edgecolor='cyan')
+        ax.set_title(d_.name or "No xds.name")
+
+        # def _format_coord(x, y):
+        #     val = d_[0, round(x), round(y)]
+        #     print("x", x, "y", y)
+        #     print("val:", val.values)
+        #     return f"({x}, {y}){val}"
+        # ax.format_coord = _format_coord
+
+    return fig
+
+
+
+def plot_data_sources_old(lst, ndvi, pop, smap, AOI, title, **kwargs):
     # TODO: include meaningful title (AOI?, time?)
     fig, axs = plt.subplots(2, 2, **kwargs)
     plt.subplots_adjust(wspace=0.3, hspace=0.4)
@@ -97,10 +135,9 @@ def plot_data_sources(lst, ndvi, pop, smap, AOI, title, **kwargs):
     ax_smap.set_title("SMAP")
 
     world = gpd.read_file(gpd.datasets.get_path('naturalearth_lowres')).clip(AOI)
-    # world = world.clip(AOI)
     for ax in axs.flatten():
         ax.axis('equal')
-        # world.plot(ax=ax, facecolor='none', edgecolor='gray')
+        world.plot(ax=ax, facecolor='none', edgecolor='gray')
 
     return fig
 
