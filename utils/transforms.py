@@ -1,4 +1,3 @@
-import geopandas as gpd
 from shapely.geometry.polygon import orient
 
 
@@ -27,15 +26,3 @@ def corners2xy(points):
     x = [w, e, e, w, w]
     y = [n, n, s, s, n]
     return x, y
-
-
-def EASE2EPSG(epsg):
-    pass
-
-
-def smap2EPSG(data, lon, lat, epsg):
-    pass
-
-
-def crop2aoi(data, AOI):
-    pass
