@@ -26,3 +26,4 @@ def validate_crops(xds, AOI, buffers, title="Validate Crops"):
         crop.plot(ax=ax)
         ax.set_title(f"buffer = {buffer}")
     return fig, axs
+

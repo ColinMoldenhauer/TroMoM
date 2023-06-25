@@ -1,8 +1,12 @@
+import os
+import glob
+
 import geopandas as gpd
 import matplotlib.pyplot as plt
 
 from mpl_toolkits.basemap import Basemap
 
+from .spatial import crop2aoi
 from .transforms import corners2xy
 
 
@@ -14,9 +18,10 @@ def plot_AOI(AOI, buffer_size=1e6, **kwargs):
     bounds = envelope.bounds
 
     # Plot
-    world = gpd.read_file(gpd.datasets.get_path('naturalearth_lowres'))
+    world = gpd.read_file('misc/naturalearth_lowres/naturalearth_lowres.shp')
+    # TODO: maybe clip like below?
+    # world = gpd.read_file('misc/naturalearth_lowres/naturalearth_lowres.shp').clip(AOI)
     f, ax = plt.subplots(1, **kwargs)
-    print("crs:", AOI.crs)
     plt.suptitle(f"AOI ({AOI.crs})", weight="bold")
     world.plot(ax=ax, facecolor='white', edgecolor='gray')
     AOI.plot(ax=ax, cmap='spring', alpha=.5)
@@ -80,7 +85,7 @@ def plot_data_dual(data, lon, lat, colorbar=False):
     return m_world, m_aoi
 
 
-def plot_data_sources(*data, AOI, title, **kwargs):
+def plot_data_sources(*data, AOI, title, clip_to_AOI=True, **kwargs):
     # TODO: include meaningful title (AOI?, time?)
     n_data = len(data)
     if n_data == 1:
@@ -95,15 +100,22 @@ def plot_data_sources(*data, AOI, title, **kwargs):
     fig.suptitle(title, weight="bold")
     plt.subplots_adjust(wspace=0.3, hspace=0.4)
 
-    world = gpd.read_file(gpd.datasets.get_path('naturalearth_lowres')).clip(AOI)
+    world = gpd.read_file('misc/naturalearth_lowres/naturalearth_lowres.shp')
+    if clip_to_AOI: world = world.clip(AOI)
+
+    # TODO: do cities too
     for ax, d_ in zip(axs, data):
+        if clip_to_AOI: d_ = crop2aoi(d_, AOI)
         if d_.name == "NDVI":
             cmap = "Greens"
         else:
             cmap = None
 
         ax.axis('equal')
-        d_.plot(ax=ax, cmap=cmap)
+        if len(data) == 1:
+            d_.plot(cmap=cmap)
+        else:
+            d_.plot(ax=ax, cmap=cmap)
         world.plot(ax=ax, facecolor='none', edgecolor='cyan')
         ax.set_title(d_.name or "No xds.name")
 
@@ -116,28 +128,11 @@ def plot_data_sources(*data, AOI, title, **kwargs):
 
     return fig
 
-
-
-def plot_data_sources_old(lst, ndvi, pop, smap, AOI, title, **kwargs):
-    # TODO: include meaningful title (AOI?, time?)
-    fig, axs = plt.subplots(2, 2, **kwargs)
-    plt.subplots_adjust(wspace=0.3, hspace=0.4)
-    ax_lst, ax_ndvi, ax_pop, ax_smap = axs.flatten()
-    lst.plot(ax=ax_lst)
-    ndvi.plot(ax=ax_ndvi)
-    pop.plot(ax=ax_pop)
-    smap.plot(ax=ax_smap)
-
-    fig.suptitle(title, weight="bold")
-    ax_lst.set_title("Land Surface Temperature")
-    ax_ndvi.set_title("NDVI")
-    ax_pop.set_title("POP")
-    ax_smap.set_title("SMAP")
-
-    world = gpd.read_file(gpd.datasets.get_path('naturalearth_lowres')).clip(AOI)
-    for ax in axs.flatten():
-        ax.axis('equal')
-        world.plot(ax=ax, facecolor='none', edgecolor='gray')
-
-    return fig
+def visualize_available_data(data_dir, pattern, reader, maxn=20):
+    matches = glob.glob(os.path.join(data_dir, pattern))
+    for match_ in matches:
+        print("match:", match_)
+        data = reader(match_)
+        plt.figure()
+        data.plot()
 

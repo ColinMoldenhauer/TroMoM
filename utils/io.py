@@ -13,6 +13,8 @@ import xarray
 
 # TODO: determine necessary data types (save space by using int/float16)
 # TODO: check scaling behavior of nodata values: Nodata kept or transformed? Nodata attrs kept?
+# TODO: compare extracted EASE coordinates with misc/ coordinate data
+# TODO optional: unify verbosity handling
 """ Notes
 - "you can write the CF attributes" https://corteva.github.io/rioxarray/stable/getting_started/crs_management.html
 """
@@ -36,17 +38,6 @@ def print_raster(raster, all=False, indent=0):
     print(f"{indent}type:", type(raster))
     if all:
         print("dir:", dir(raster))
-        # for attr in list(dir(raster)):
-            # if attr.startswith("_") or attr in ["T", "all", "any", "argmax"]: continue
-            # print(f"{indent}{attr}: {raster.__getattr__(attr)}")
-        # import inspect
-        # for i in inspect.getmembers(raster):
-        #     # Ignores anything starting with underscore
-        #     # (that is, private and protected attributes)
-        #     if not i[0].startswith('_'):
-        #         # Ignores methods
-        #         if not inspect.ismethod(i[1]):
-        #             print(i)
         for attr in dir(raster):
             if callable(getattr(raster, attr)): continue
             try:
@@ -55,6 +46,7 @@ def print_raster(raster, all=False, indent=0):
                 print("error with attr:", attr)
     else:
         print(
+            f"{indent}name: {raster.name}\n"
             f"{indent}shape: {raster.rio.shape}\n"
             f"{indent}resolution: {raster.rio.resolution()}\n"
             f"{indent}bounds: {raster.rio.bounds()}\n"
@@ -64,7 +56,7 @@ def print_raster(raster, all=False, indent=0):
 
 
 def read_SMAP(filepath, group_id="Soil_Moisture_Retrieval_Data_AM", variable_id='soil_moisture',
-              verbose=1, debug=False):
+              verbose=False, debug=False):
     # TODO: mask handling?
 
     def _print_structure(name, obj):
@@ -80,7 +72,7 @@ def read_SMAP(filepath, group_id="Soil_Moisture_Retrieval_Data_AM", variable_id=
     suffix = "_pm" if group_id.endswith("_PM") else ""
         
     with h5py.File(filepath, 'r') as f:
-        if verbose > 1:
+        if verbose:
             print(f)
             print("available GROUPs")
             for i, key in enumerate(f.keys()):
@@ -148,32 +140,23 @@ def read_SMAP(filepath, group_id="Soil_Moisture_Retrieval_Data_AM", variable_id=
     da.rio.set_crs("epsg:4326", inplace=True)
     da.rio.set_nodata(-9999.0, inplace=True)
 
-    if verbose > 0:
-        print("\nSMAP file:", filepath)
-        print_raster(da, indent=1)
-
     return da
 
 
-def read_POP(filename, verbose=2):
+def read_POP(filename):
     """
 
     Notes:
     - masked=True | doesnt change anything, probably full data in snippet -> check with whole data maybe
 
     :param filename:
-    :param verbose:
     :return:
     """
-    # TODO: units
+    # TODO: check if nodata is available -> else maybe mask with ocean mask??
     xds = rioxarray.open_rasterio(filename, masked=True, decode_cf=True)     # <class 'xarray.core.dataarray.DataArray'>
     xds.rio.set_nodata(-200, inplace=True)
     xds.attrs["units"] = "#inhabitants"
-    if verbose == 1:
-        print("\nPOP file:", filename)
-        print_raster(xds, indent=1)
-    elif verbose > 1:
-        print(xds)
+    xds.name = "POP"
 
     return xds
 
@@ -197,7 +180,7 @@ def _copy_attributes(ref, new, attrs):
 
 
 
-def read_LST(filename, raw=False, verbose=1):
+def read_LST(filename, raw=False):
     """
     Reads Land Surface Temperature data, obtained from https://land.copernicus.eu/global/products/LST.
     The digital value needs to be transformed to the physical range as follows: PV = Scaling * DN + Offset.
@@ -207,7 +190,6 @@ def read_LST(filename, raw=False, verbose=1):
 
     :param filename: (str) Filename of input file (.nc NetCDF file)
     :param raw: (bool) Whether to transform data into physical values right away or only read raw data
-    :param verbose: (int) Toggles verbosity level
     :return: (xarray.DataArray) Georeferenced data array object
     """
     # TODO optional: EPSG:4326 not recognized by riox, need to set it manually (find out difference to NDVI?)
@@ -220,26 +202,17 @@ def read_LST(filename, raw=False, verbose=1):
     xds_raw = ds["LST"]
     if raw:
         xds = xds_raw
-    if not raw:
+    else:
         xds = xds_raw/100  # °C
         xds.attrs = xds_raw.attrs
         xds.rio.write_crs(input_crs=xds_raw.rio.crs, grid_mapping_name=xds_raw.rio.grid_mapping, inplace=True)
         xds.attrs["units"] = "°C"
         xds.attrs["valid_range"] = [-70, 80]
 
-
-    if verbose: print("\nLST file:", filename)
-    if verbose == 1:
-        print_raster(xds, indent=1)
-    elif verbose == 2:
-        print(xds)
-    elif verbose == 3:
-        print(ds)
-
     return xds
 
 
-def read_NDVI(filename, raw=False, chunks=4000, verbose=1):
+def read_NDVI(filename, raw=False, chunks=4000):
     """
     Reads NDVI data, obtained from https://land.copernicus.eu/global/products/NDVI.
     Makes use of dask chunking mechanisms and is hence suitable for very large files.
@@ -250,7 +223,6 @@ def read_NDVI(filename, raw=False, chunks=4000, verbose=1):
 
     :param filename: (str) Filename of input file (.nc NetCDF file)
     :param raw: (bool) Whether to transform data into physical values right away or only read raw data
-    :param verbose: (int) Toggles verbosity level
     :return: (xarray.DataArray) Georeferenced data array object
     """
     # TODO: no-data: 254: water, 255: no-data multiple values? probably set all to 255
@@ -268,13 +240,4 @@ def read_NDVI(filename, raw=False, chunks=4000, verbose=1):
         xds.attrs["units"] = "-"
         xds.attrs["valid_range"] = [-0.08, 0.92]
     assert xds.rio.crs == "EPSG:4326", "CRS not EPSG:4326, fix this!"
-
-    if verbose:
-        print("\nNDVI file:", filename)
-    if verbose == 1:
-        print_raster(xds, indent=1)
-    elif verbose == 2:
-        print(xds)
-    else:
-        print(ds)
     return xds

@@ -43,7 +43,7 @@ def get_files(session, url_path):
 
 
 # TODO: use AOI: probably ignore in download and use for "acquire" or smth
-def download_smap_single_date(shortname, date, data_dir="data", version=None, verbose=True):
+def download_smap_single_date(shortname, date, data_dir="data", overwrite=False, version=None, verbose=True):
     credentials_smap = {
         "mail": "colin.moldenhauer@tum.de",
         "user": "TroMoM",
@@ -62,11 +62,14 @@ def download_smap_single_date(shortname, date, data_dir="data", version=None, ve
         file_names = get_files(session, url_path)
         for i, file_name_ in enumerate(file_names):
             if verbose: print(f"\tfile: {file_name_} [{i+1}/{len(file_names)}]")
+            filepath = os.path.join(data_dir, "SMAP", file_name_)
+            if os.path.exists and not overwrite:
+                if verbose: print("already exists, skipping...")
+                continue
 
             full_url = url_path + file_name_
             response = make_request(session, full_url)
 
-            filepath = os.path.join(data_dir, "SMAP", file_name_)
             with open(filepath, 'wb') as f:
                 f.write(response.content)
 

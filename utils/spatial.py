@@ -1,5 +1,9 @@
+# import rioxarray.raster_array
+import xarray
+
 from rasterio.enums import Resampling
-import geopandas as gpd
+
+from utils.io import print_raster
 
 
 def resample_data(xds, factor, method=Resampling.bilinear, verbose=True):
@@ -25,7 +29,7 @@ def resample_data(xds, factor, method=Resampling.bilinear, verbose=True):
     return xds_resampled
 
 
-def crop2aoi(xds, AOI, buffer=None, verbose=True):
+def crop2aoi(xds, AOI, buffer=None, verbose=False):
     """
     Crops data to a user-specified area of interest (AOI).
 
@@ -46,3 +50,30 @@ def crop2aoi(xds, AOI, buffer=None, verbose=True):
         print(f"cropping | (minx, miny, maxx, maxy) = {AOI.bounds.values[0]}")
     clipped = xds.rio.clip_box(minx=minx, miny=miny, maxx=maxx, maxy=maxy)
     return clipped
+
+
+def match_data(data_target, *data, resampling=Resampling.bilinear):
+    """
+
+    Notes:
+    - SMAP data gets stripes: investigate
+
+    :param data_target:
+    :param data:
+    :param resampling:
+    :return:
+    """
+    out = []
+    for xds in data:
+        print("rio type:", type(xds.rio))
+        print("in xds:")
+        print_raster(xds)
+        print()
+        # TODO: check if other params for .reproject() are necessary
+        matched = xds.rio.reproject_match(data_target, resampling)
+        out.append(matched)
+
+        print("out xds:")
+        print_raster(matched)
+        print()
+    return out
