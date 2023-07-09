@@ -63,7 +63,7 @@ def download_smap_single_date(shortname, date, data_dir="data", overwrite=False,
         for i, file_name_ in enumerate(file_names):
             if verbose: print(f"\tfile: {file_name_} [{i+1}/{len(file_names)}]")
             filepath = os.path.join(data_dir, "SMAP", file_name_)
-            if os.path.exists and not overwrite:
+            if os.path.exists(filepath) and not overwrite:
                 if verbose: print("already exists, skipping...")
                 continue
 

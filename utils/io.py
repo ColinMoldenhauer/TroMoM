@@ -3,6 +3,7 @@ import os
 import re
 import warnings
 
+import cftime
 import matplotlib.pyplot as plt
 import h5py
 import netCDF4
@@ -11,8 +12,8 @@ import rioxarray
 from xarray import DataArray
 import xarray
 
+# TODO: inspect outliers (LST = -3.33 zB) and handle them
 # TODO: determine necessary data types (save space by using int/float16)
-# TODO: check scaling behavior of nodata values: Nodata kept or transformed? Nodata attrs kept?
 # TODO: compare extracted EASE coordinates with misc/ coordinate data
 # TODO optional: unify verbosity handling
 """ Notes
@@ -135,10 +136,11 @@ def read_SMAP(filepath, group_id="Soil_Moisture_Retrieval_Data_AM", variable_id=
         attrs=dict(
             description="Soil Moisture",            # TODO: extract from h5?
             units="water fraction cm³/cm³",         # TODO: confirm
+            time=cftime.DatetimeGregorian(yyyy, mm, dd)
         )
     )
     da.rio.set_crs("epsg:4326", inplace=True)
-    da.rio.set_nodata(-9999.0, inplace=True)
+    da.rio.set_nodata(np.nan, inplace=True)
 
     return da
 
@@ -153,31 +155,12 @@ def read_POP(filename):
     :return:
     """
     # TODO: check if nodata is available -> else maybe mask with ocean mask??
-    xds = rioxarray.open_rasterio(filename, masked=True, decode_cf=True)     # <class 'xarray.core.dataarray.DataArray'>
-    xds.rio.set_nodata(-200, inplace=True)
+    xds = rioxarray.open_rasterio(filename, masked=True, decode_cf=True)[0]     # has only one "band" in first axis
     xds.attrs["units"] = "#inhabitants"
     xds.name = "POP"
+    xds.rio.set_nodata(np.nan, inplace=True)
 
     return xds
-
-
-import functools
-
-def rsetattr(obj, attr, val):
-    pre, _, post = attr.rpartition('.')
-    return setattr(rgetattr(obj, pre) if pre else obj, post, val)
-
-def rgetattr(obj, attr, *args):
-    def _getattr(obj, attr):
-        return getattr(obj, attr, *args)
-    return functools.reduce(_getattr, [obj] + attr.split('.'))
-
-def _copy_attributes(ref, new, attrs):
-    for attr in attrs:
-        print("\nbefore:", attr, ":", rgetattr(new, attr))
-        rsetattr(new, attr, rgetattr(ref, attr))
-        print("after:", attr, ":", rgetattr(new, attr))
-
 
 
 def read_LST(filename, raw=False):
@@ -196,10 +179,10 @@ def read_LST(filename, raw=False):
 
     xarray.set_options(keep_attrs=True)
 
-    ds = rioxarray.open_rasterio(filename, masked=True)     # <class 'xarray.core.dataset.Dataset'>
+    ds = rioxarray.open_rasterio(filename, masked=True)
     if ds.rio.crs != "EPSG:4326": ds.rio.write_crs(4326, inplace=True)
 
-    xds_raw = ds["LST"]
+    xds_raw = ds["LST"][0]          # only one timestamp in first axis
     if raw:
         xds = xds_raw
     else:
@@ -208,6 +191,9 @@ def read_LST(filename, raw=False):
         xds.rio.write_crs(input_crs=xds_raw.rio.crs, grid_mapping_name=xds_raw.rio.grid_mapping, inplace=True)
         xds.attrs["units"] = "°C"
         xds.attrs["valid_range"] = [-70, 80]
+
+    xds.rio.set_nodata(np.nan, inplace=True)
+    # TODO: check if raw also has no nodata, set no-data for either
 
     return xds
 
@@ -226,11 +212,12 @@ def read_NDVI(filename, raw=False, chunks=4000):
     :return: (xarray.DataArray) Georeferenced data array object
     """
     # TODO: no-data: 254: water, 255: no-data multiple values? probably set all to 255
+    #       check handling...
     # TODO: use ds.NDVI_unc, ds.NOBS, ds.QFLAG
     # TODO: understand valid NDVI value range, why not [-1, 1]
 
     ds = rioxarray.open_rasterio(filename, masked=True, chunks={'x': chunks, 'y': chunks})
-    xds_raw = ds["NDVI"]
+    xds_raw = ds["NDVI"][0]             # only one timestamp in first axis
     if raw:
         xds = xds_raw
     else:
@@ -240,4 +227,39 @@ def read_NDVI(filename, raw=False, chunks=4000):
         xds.attrs["units"] = "-"
         xds.attrs["valid_range"] = [-0.08, 0.92]
     assert xds.rio.crs == "EPSG:4326", "CRS not EPSG:4326, fix this!"
+
+    xds.rio.set_nodata(np.nan, inplace=True)
+    return xds
+
+
+def read_SMOS(filename):
+    """
+    Reads SMOS data.
+
+    Notes:
+
+    :param filename: (str) Filename of input file (.nc NetCDF file)
+    :return: (xarray.DataArray) Georeferenced data array object
+    """
+    # TODO optional: EPSG:4326 not recognized by riox, need to set it manually (find out difference to NDVI?)
+
+    xarray.set_options(keep_attrs=True)
+
+    ds = rioxarray.open_rasterio(filename, masked=True)     # <class 'xarray.core.dataset.Dataset'>
+    if ds.rio.crs != "EPSG:4326":
+        print("warning, no EPSG:4326 in SMOS")
+        ds.rio.write_crs(4326, inplace=True)
+
+    print("ds:")
+    print(ds)
+
+    xds = ds["SMOS"]
+
+    print("da:")
+    print(xds)
+
+    print()
+    print("rio")
+    print_raster(xds)
+
     return xds

@@ -1,9 +1,10 @@
 # import rioxarray.raster_array
+import numpy as np
 import xarray
 
 from rasterio.enums import Resampling
 
-from utils.io import print_raster
+from TroMoM.utils.io import print_raster
 
 
 def resample_data(xds, factor, method=Resampling.bilinear, verbose=True):
@@ -30,6 +31,9 @@ def resample_data(xds, factor, method=Resampling.bilinear, verbose=True):
 
 
 def crop2aoi(xds, AOI, buffer=None, verbose=False):
+    # TODO: if is dasked -> remove dask if small enough?
+    #       The easiest way to convert an xarray data structure from lazy Dask arrays into eager,
+    #       in-memory NumPy arrays is to use the load() method:
     """
     Crops data to a user-specified area of interest (AOI).
 
@@ -46,8 +50,7 @@ def crop2aoi(xds, AOI, buffer=None, verbose=False):
     # TODO: adapt to multi-area AOIs -> get envelope -> then bounds (probably using GeoSeries.unary_union())
     if buffer is not None: AOI = AOI.buffer(buffer)
     minx, miny, maxx, maxy = AOI.bounds.values[0]
-    if verbose:
-        print(f"cropping | (minx, miny, maxx, maxy) = {AOI.bounds.values[0]}")
+    if verbose: print(f"cropping to (minx, miny, maxx, maxy) = {AOI.bounds.values[0]}")
     clipped = xds.rio.clip_box(minx=minx, miny=miny, maxx=maxx, maxy=maxy)
     return clipped
 
@@ -65,15 +68,7 @@ def match_data(data_target, *data, resampling=Resampling.bilinear):
     """
     out = []
     for xds in data:
-        print("rio type:", type(xds.rio))
-        print("in xds:")
-        print_raster(xds)
-        print()
         # TODO: check if other params for .reproject() are necessary
         matched = xds.rio.reproject_match(data_target, resampling)
         out.append(matched)
-
-        print("out xds:")
-        print_raster(matched)
-        print()
     return out

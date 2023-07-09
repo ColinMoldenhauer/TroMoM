@@ -1,6 +1,6 @@
 import matplotlib.pyplot as plt
 
-from utils.spatial import crop2aoi
+from TroMoM.utils.spatial import crop2aoi
 
 
 def validate_resample(data, data_res, align="v", title=""):
