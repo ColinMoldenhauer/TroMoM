@@ -187,4 +187,44 @@ def plot_binary_prediction(classif, data, AOI, plot_world=True):
 
     ax.format_coord = partial(format_coord, data_plot=classif, data_aux=data, sep="  |  ")
 
-    return cbar_ax
+    return fig, ax
+
+
+
+# TODO: unify binary and risk estimation plotting
+def plot_risk_estimation(risk, data, AOI, discrete=True, plot_world=True):
+    """
+
+    :param risk:
+    :param data:
+    :param AOI:
+    :param discrete:
+    :param plot_world:
+    :return:
+    """
+    # TODO: include thresholds / rating in info
+    # TODO: allow for other thresh depths in colormap
+    if discrete:
+        cmap = plt.get_cmap("RdYlGn_r", 5)
+    else:
+        cmap = None
+    fig, ax = plt.subplots(1, 1)
+    if discrete:
+        pcolor = risk.plot(ax=ax, cmap=cmap, vmin=1, vmax=5)
+    else:
+        pcolor = risk.plot(ax=ax, cmap=cmap)
+    ax.set_title("Risk Estimation")
+    if discrete:
+        cbar_ax = fig.axes[-1]
+        cbar = plt.colorbar(pcolor, cax=cbar_ax, aspect=10, fraction=.09,
+                            values=[1, 2, 3, 4, 5], ticks=[1, 2, 3, 4, 5],
+                            cmap=cmap, norm=matplotlib.colors.BoundaryNorm(np.arange(1, 6), 5))
+
+    if plot_world:
+        world = gpd.read_file('misc/naturalearth_lowres/naturalearth_lowres.shp').clip(AOI)
+        world.plot(ax=ax, facecolor='none', edgecolor='cyan')
+
+    ax.format_coord = partial(format_coord, data_plot=risk, data_aux=data, sep="  |  ")
+
+    return fig, ax
+

@@ -11,9 +11,10 @@ import matplotlib.pyplot as plt
 from TroMoM.utils.io import read_POP, read_LST, read_NDVI, read_SMAP, read_SMOS, print_raster
 from TroMoM.utils.spatial import crop2aoi, match_data
 from TroMoM.utils.utils import get_objs
-from TroMoM.utils.visualization import plot_data, plot_data_dual, plot_data_sources, plot_AOI, plot_binary_prediction
+from TroMoM.utils.visualization import plot_data, plot_data_dual, plot_data_sources, plot_AOI, plot_binary_prediction, \
+    plot_risk_estimation
 from TroMoM.utils.validation import validate_resample, validate_crops
-from TroMoM.utils.prediction import classify_by_interval
+from TroMoM.utils.prediction import classify_by_interval, risk_estimation
 import TroMoM.utils.thresholds as thresh
 
 # TODO: print everything again: xds, xds.rio, etc...
@@ -66,8 +67,8 @@ if "smap" in todo:
 
 
 crops = get_objs("crop_", vars())
-# plot_data_sources(*crops, AOI=AOI, title="Cropped data")
-matched = match_data(crop_smap, *crops)
+# matched = match_data(crop_smap, *crops)
+matched = match_data(crop_ndvi, *crops)
 matched_pop, matched_lst, matched_ndvi, matched_smap = matched
 plot_data_sources(*matched, AOI=AOI, title="Matched data")
 classif = classify_by_interval(matched, [thresh.SINGLE_INTERVAL_POP,
@@ -75,6 +76,25 @@ classif = classify_by_interval(matched, [thresh.SINGLE_INTERVAL_POP,
                                          thresh.SINGLE_INTERVAL_NDVI,
                                          thresh.SINGLE_INTERVAL_SMAP])
 
-cbar = plot_binary_prediction(classif, matched, AOI)
+plot_binary_prediction(classif, matched, AOI)
 
-# plt.show()
+risk_estim_avg = risk_estimation(matched, [thresh.MULTI_INTERVAL_POP,
+                                           thresh.MULTI_INTERVAL_LST,
+                                           thresh.MULTI_INTERVAL_NDVI,
+                                           thresh.MULTI_INTERVAL_SMAP], discrete=False)
+
+risk_estim_disc = risk_estimation(matched, [thresh.MULTI_INTERVAL_POP,
+                                           thresh.MULTI_INTERVAL_LST,
+                                           thresh.MULTI_INTERVAL_NDVI,
+                                           thresh.MULTI_INTERVAL_SMAP], discrete=True)
+
+risk_estim = risk_estimation(matched, [thresh.MULTI_INTERVAL_POP,
+                                       thresh.MULTI_INTERVAL_LST,
+                                       thresh.MULTI_INTERVAL_NDVI,
+                                       thresh.MULTI_INTERVAL_SMAP], discrete=False, average=False)
+
+
+plot_risk_estimation(risk_estim_avg, matched, AOI, discrete=True)
+plot_risk_estimation(risk_estim, matched, AOI, discrete=False)
+plot_risk_estimation(risk_estim_avg, matched, AOI, discrete=False)
+
