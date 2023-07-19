@@ -27,3 +27,7 @@ def validate_crops(xds, AOI, buffers, title="Validate Crops"):
         ax.set_title(f"buffer = {buffer}")
     return fig, axs
 
+
+def validate_prediction(threshs_multi):
+    pass
+

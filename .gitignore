@@ -1,6 +1,10 @@
 data
 env
 data
+imgs
+predictions
+qgis
+visuals
 **.idea**
 **.ipynb_checkpoints**
 **__pycache__**

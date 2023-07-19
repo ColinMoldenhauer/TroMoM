@@ -41,13 +41,17 @@ def classify_by_interval(data, thresh_list, per_layer=False):
 
 
 
-def risk_estimation(data, thresh_list, discrete=True, average=True):
+def risk_estimation(data, thresh_list, discrete=True, average=True, single=False):
     """
 
     :param data:
     :param thresh_list:
     :return:
     """
+
+    # allow recursion for multiple estimations at once
+    if single: return [risk_estimation([d_], [th_], discrete, average) for d_, th_ in zip(data, thresh_list)]
+
     assert len(data) == len(thresh_list), "Number of thresholds must equal number of data layers."
     assert all([len(t) == 5 for t in thresh_list]), "At this point, we expect 5 risk levels per data layer."
     risk = np.zeros(data[0].to_numpy().shape[:2], dtype=float)        # TODO optional: unify for other types?
@@ -55,11 +59,11 @@ def risk_estimation(data, thresh_list, discrete=True, average=True):
     for layer_, threshs_per_data_ in zip(data, thresh_list):    # one large list per data layer (POP, SMAP, etc...)
         layer_ = layer_.to_numpy()
         risk[np.isnan(layer_)] = np.nan                 # no data pixels are propagated
-        for risk_level_, threshs_per_level_ in enumerate(threshs_per_data_, 1):     # 5 lists of lists
+        for risk_level_, threshs_per_level_ in enumerate(threshs_per_data_[::-1], 1):     # 5 lists of lists -> invert for correct risk association
             for risk_interval_ in threshs_per_level_:
                 lower, upper = risk_interval_
                 # increase risk level per pixel if value in interval and not NaN
-                risk[(layer_ >= lower) & (layer_ <= upper) & ~np.isnan(risk)] += risk_level_
+                risk[(layer_ > lower) & (layer_ <= upper) & ~np.isnan(risk)] += risk_level_
 
     if average or discrete:
         mask_nan = np.isnan(risk)

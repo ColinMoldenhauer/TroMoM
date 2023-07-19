@@ -9,9 +9,9 @@ import numpy as np
 
 from mpl_toolkits.basemap import Basemap
 
-from .spatial import crop2aoi
-from .transforms import corners2xy
-from .utils import format_coord
+from TroMoM.utils.spatial import crop2aoi
+from TroMoM.utils.transforms import corners2xy
+from TroMoM.utils.utils import format_coord
 
 
 def plot_AOI(AOI, buffer_size=1e6, **kwargs):
@@ -89,7 +89,7 @@ def plot_data_dual(data, lon, lat, colorbar=False):
     return m_world, m_aoi
 
 
-def plot_data_sources(*data, AOI, title, clip_to_AOI=True, plot_numpy=False, **kwargs):
+def plot_data_sources(*data, AOI, title, clip_to_AOI=True, plot_numpy=False, title_size=26, **kwargs):
     # TODO: include meaningful title (AOI?, time?)
     # TODO: fix plot_numpy AOI reprojection
     n_data = len(data)
@@ -102,7 +102,7 @@ def plot_data_sources(*data, AOI, title, clip_to_AOI=True, plot_numpy=False, **k
     else:
         fig, axs = plt.subplots(2, 2, **kwargs)
         axs = axs.flatten()
-    fig.suptitle(title, weight="bold")
+    fig.suptitle(title, weight="bold", fontsize=title_size)
     plt.subplots_adjust(wspace=0.3, hspace=0.4)
 
     world = gpd.read_file('misc/naturalearth_lowres/naturalearth_lowres.shp')
@@ -128,21 +128,16 @@ def plot_data_sources(*data, AOI, title, clip_to_AOI=True, plot_numpy=False, **k
             else:
                 d_.plot(ax=ax, cmap=cmap, robust=True)
         world.plot(ax=ax, facecolor='none', edgecolor='cyan')
-        ax.set_title(d_.name or "No xds.name")
-
-        # def _format_coord(x, y):
-        #     val = d_[0, round(x), round(y)]
-        #     print("x", x, "y", y)
-        #     print("val:", val.values)
-        #     return f"({x}, {y}){val}"
-        # ax.format_coord = _format_coord
+        ax.set_title(d_.name or "No xds.name", fontsize=int(0.8*title_size))
+        ax.set_xlabel("longitude [°]")
+        ax.set_ylabel("latitude [°]")
 
         ax.format_coord = partial(format_coord, data_plot=d_)
 
     return fig
 
 
-def visualize_available_data(data_dir, pattern, reader, plot_world=True, crop=None, maxn=None):
+def visualize_available_data(data_dir, pattern, reader, plot_world=True, crop=None, maxn=None, no_label=True):
     matches = glob.glob(os.path.join(data_dir, pattern))
     if maxn: matches = matches[:maxn]
 
@@ -161,12 +156,19 @@ def visualize_available_data(data_dir, pattern, reader, plot_world=True, crop=No
                 AOI = crop
             data = crop2aoi(data, AOI)
         data.plot(ax=ax_)
+        cbar_ax = fig.axes[-1]
         if plot_world:
             world = gpd.read_file('misc/naturalearth_lowres/naturalearth_lowres.shp')
-            if crop: world = world.clip(AOI)    # TODO: do isinstance as above
+            if crop: world = world.clip(AOI)
             world.plot(ax=ax_, facecolor='none', edgecolor='cyan')
 
-        ax_.set_title(str(i))
+        ax_.set_title(data.time.isoformat(), fontsize='xx-small')
+        if no_label:
+            ax_.set_xlabel("")
+            ax_.set_ylabel("")
+            ax_.set_axis_off()
+            cbar_ax.remove()
+
 
 
 def plot_binary_prediction(classif, data, AOI, plot_world=True):
@@ -192,7 +194,8 @@ def plot_binary_prediction(classif, data, AOI, plot_world=True):
 
 
 # TODO: unify binary and risk estimation plotting
-def plot_risk_estimation(risk, data, AOI, discrete=True, plot_world=True):
+def plot_risk_estimation(risk, data, threshs, AOI, discrete=True,
+                         title="Risk Estimation", plot_world=True, ax=None, title_size=26):
     """
 
     :param risk:
@@ -204,16 +207,44 @@ def plot_risk_estimation(risk, data, AOI, discrete=True, plot_world=True):
     """
     # TODO: include thresholds / rating in info
     # TODO: allow for other thresh depths in colormap
+
+    # subplot recursion for multi-view
+    if isinstance(risk, list):
+        n_data = len(data)
+        if n_data == 1:
+            fig = plt.figure()
+            axs = [plt.gca()]
+        elif n_data < 4:
+            fig, axs = plt.subplots(1, n_data)
+            axs = axs.flatten()
+        else:
+            fig, axs = plt.subplots(2, 2)
+            axs = axs.flatten()
+        fig.suptitle(title, weight="bold", fontsize=title_size)
+        plt.subplots_adjust(wspace=0.3, hspace=0.4)
+
+        for ax_, r_, d_, th_ in zip(axs, risk, data, threshs):
+            plot_risk_estimation(r_, [d_], [th_], AOI, discrete, d_.name, plot_world, ax_, title_size=int(0.8*title_size))
+
+        return fig, axs
+
     if discrete:
         cmap = plt.get_cmap("RdYlGn_r", 5)
     else:
         cmap = None
-    fig, ax = plt.subplots(1, 1)
+
+    if ax is None:
+        fig, ax = plt.subplots(1, 1)
+    else:
+        fig = ax.get_figure()
+
     if discrete:
         pcolor = risk.plot(ax=ax, cmap=cmap, vmin=1, vmax=5)
     else:
         pcolor = risk.plot(ax=ax, cmap=cmap)
-    ax.set_title("Risk Estimation")
+    ax.set_title(title, fontsize=title_size)
+    ax.set_xlabel("longitude [°]")
+    ax.set_ylabel("latitude [°]")
     if discrete:
         cbar_ax = fig.axes[-1]
         cbar = plt.colorbar(pcolor, cax=cbar_ax, aspect=10, fraction=.09,
@@ -224,7 +255,7 @@ def plot_risk_estimation(risk, data, AOI, discrete=True, plot_world=True):
         world = gpd.read_file('misc/naturalearth_lowres/naturalearth_lowres.shp').clip(AOI)
         world.plot(ax=ax, facecolor='none', edgecolor='cyan')
 
-    ax.format_coord = partial(format_coord, data_plot=risk, data_aux=data, sep="  |  ")
+    ax.format_coord = partial(format_coord, data_plot=risk, data_aux=data, threshs_aux=threshs, sep="  |  ")
 
     return fig, ax
 

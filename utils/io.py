@@ -186,7 +186,7 @@ def read_LST(filename, raw=False):
     if raw:
         xds = xds_raw
     else:
-        xds = xds_raw/100  # °C
+        xds = xds_raw/100+8  # °C
         xds.attrs = xds_raw.attrs
         xds.rio.write_crs(input_crs=xds_raw.rio.crs, grid_mapping_name=xds_raw.rio.grid_mapping, inplace=True)
         xds.attrs["units"] = "°C"
@@ -263,3 +263,22 @@ def read_SMOS(filename):
     print_raster(xds)
 
     return xds
+
+
+def save_tiff(data, filename, fail_on_error=False):
+    # save multiple
+    if isinstance(data, list):
+        assert isinstance(filename, list) and len(data) == len(filename)
+        for data_, filen_ in zip(data, filename):
+            save_tiff(data_, filen_)
+        return
+    try:
+        data.rio.to_raster(
+            filename,
+            driver="GTiff"
+        )
+    except Exception as e:
+        if fail_on_error:
+            raise e
+        else:
+            warnings.warn(f"Could not write file {filename}")
